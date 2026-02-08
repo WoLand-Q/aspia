@@ -3,7 +3,7 @@ name: windows
 on:
   push:
     branches:
-      - master, smartcafe/rebrand-v1
+      - master
     paths-ignore:
       - 'README.md'
       - 'LICENSE.md'
