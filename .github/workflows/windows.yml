@@ -58,14 +58,21 @@ jobs:
           repository: dchapyshev/vcpkg4aspia
           path: vcpkg4aspia
 
-      # Step 3
+      # Step 3 - NEW: Install CMake 4.0.0 or higher
+      - name: Install CMake 4.0.0 or higher
+        run: |
+          choco install cmake --version=4.0.0 -y
+        shell: cmd
+
+      # Step 4
       # Install WIX and Windows SDK dependencies
       - name: Install WIX and Windows SDK
         run: |
           choco install wixtoolset -y
           choco install windows-sdk-10.1 -y
+        shell: cmd
 
-      # Step 4
+      # Step 5
       # On Windows runners, let's ensure to have the Developer Command Prompt
       # environment setup correctly. As used here the Developer Command Prompt
       # created is targeting x86 and using the default the Windows SDK.
@@ -76,7 +83,13 @@ jobs:
           arch: ${{ matrix.arch }}
           toolset: 14.44
 
-      # Step 5
+      # Step 6
+      - name: Verify CMake version
+        run: |
+          cmake --version
+        shell: cmd
+
+      # Step 7
       - name: Dependencies, Build, Tests (Windows/PowerShell)
         env:
           # This vars used inside CMake
@@ -103,7 +116,7 @@ jobs:
           # Run tests
           ctest --preset ninja-vcpkg-ci-${{ matrix.build_type }}
 
-      # Step 6
+      # Step 8
       - name: Verify build artifacts exist
         run: |
           echo "Build artifacts directory listing:"
@@ -125,7 +138,7 @@ jobs:
           echo "All required build artifacts found!"
         shell: cmd
 
-      # Step 7
+      # Step 9
       - name: Build MSI packages
         run: |
           installer\build.cmd 3.0.0 ${{ matrix.arch }} ${{ github.workspace }} ${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}
@@ -133,7 +146,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         continue-on-error: false
 
-      # Step 8
+      # Step 10
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
