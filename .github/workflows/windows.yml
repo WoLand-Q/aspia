@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [win11]
+        os: [windows-latest]
         arch: [x86, x64]
         build_type: [release, debug]
         include:
