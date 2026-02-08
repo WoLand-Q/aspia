@@ -31,6 +31,12 @@ jobs:
         arch: [x86, x64]
         build_type: [release, debug]
         include:
+          - os: windows-latest
+            arch: x86
+            triplet: x86-windows-static
+          - os: windows-latest
+            arch: x64
+            triplet: x64-windows-static
           - os: win11
             arch: x86
             triplet: x86-windows-static
