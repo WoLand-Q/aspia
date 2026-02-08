@@ -59,6 +59,13 @@ jobs:
           path: vcpkg4aspia
 
       # Step 3
+      # Install WIX and Windows SDK dependencies
+      - name: Install WIX and Windows SDK
+        run: |
+          choco install wixtoolset -y
+          choco install windows-sdk-10.1 -y
+
+      # Step 4
       # On Windows runners, let's ensure to have the Developer Command Prompt
       # environment setup correctly. As used here the Developer Command Prompt
       # created is targeting x86 and using the default the Windows SDK.
@@ -69,7 +76,7 @@ jobs:
           arch: ${{ matrix.arch }}
           toolset: 14.44
 
-      # Step 4
+      # Step 5
       - name: Dependencies, Build, Tests (Windows/PowerShell)
         env:
           # This vars used inside CMake
@@ -96,14 +103,37 @@ jobs:
           # Run tests
           ctest --preset ninja-vcpkg-ci-${{ matrix.build_type }}
 
-      # Step 3
+      # Step 6
+      - name: Verify build artifacts exist
+        run: |
+          echo "Build artifacts directory listing:"
+          dir "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\"
+          
+          echo "Checking for required executables..."
+          if not exist "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\smartcafe_router.exe" (
+            echo "ERROR: smartcafe_router.exe not found"
+            exit 1
+          )
+          if not exist "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\smartcafe_relay.exe" (
+            echo "ERROR: smartcafe_relay.exe not found"
+            exit 1
+          )
+          if not exist "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\smartcafe_sha256.exe" (
+            echo "ERROR: smartcafe_sha256.exe not found"
+            exit 1
+          )
+          echo "All required build artifacts found!"
+        shell: cmd
+
+      # Step 7
       - name: Build MSI packages
         run: |
-          installer/build.cmd 3.0.0 ${{ matrix.arch }} ${{ github.workspace }} ${{ github.workspace }}/builds/ninja-vcpkg-ci/${{ matrix.build_type }}
+          installer\build.cmd 3.0.0 ${{ matrix.arch }} ${{ github.workspace }} ${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}
         shell: cmd
         working-directory: ${{ github.workspace }}
+        continue-on-error: false
 
-      # Step 6
+      # Step 8
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
