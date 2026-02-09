@@ -3,12 +3,15 @@
 rem Resolve Windows SDK version dynamically.
 rem GitHub-hosted runners (and developer machines) don't guarantee a specific SDK version.
 set SDK_VERSION=
-for /f "delims=" %%V in ('dir /b /ad /o-n "%ProgramFiles(x86)%\Windows Kits\10\bin\10.*" 2^>nul') do (
-    if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\%%V\x86\wisubstg.vbs" (
+pushd "%ProgramFiles(x86)%\\Windows Kits\\10\\bin" 2>nul || goto SDK_VERSION_FOUND
+for /f "delims=" %%V in ('dir /b /ad /o-n "10.*" 2^>nul') do (
+    if exist "%%V\\x86\\wisubstg.vbs" (
         set SDK_VERSION=%%V
-        goto :SDK_VERSION_FOUND
+        goto SDK_VERSION_FOUND_POPD
     )
 )
+:SDK_VERSION_FOUND_POPD
+popd
 
 :SDK_VERSION_FOUND
 if "%SDK_VERSION%" == "" (
