@@ -172,8 +172,8 @@ jobs:
 
       - name: Build MSI packages
         run: |
-          set BIN_DIR=%GITHUB_WORKSPACE%\builds\ninja-vcpkg-ci\Release
-          installer\build.cmd 3.0.0 ${{ matrix.arch }} %GITHUB_WORKSPACE% %BIN_DIR%
+          set "BIN_DIR=%GITHUB_WORKSPACE%\builds\ninja-vcpkg-ci\Release"
+          call installer\build.cmd 3.0.0 ${{ matrix.arch }} %GITHUB_WORKSPACE% %BIN_DIR%
         shell: cmd
         working-directory: ${{ github.workspace }}
 
