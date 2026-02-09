@@ -1,6 +1,20 @@
 @echo off
 
-set SDK_VERSION=10.0.19041.0
+rem Resolve Windows SDK version dynamically.
+rem GitHub-hosted runners (and developer machines) don't guarantee a specific SDK version.
+set SDK_VERSION=
+for /f "delims=" %%V in ('dir /b /ad /o-n "%ProgramFiles(x86)%\Windows Kits\10\bin\10.*" 2^>nul') do (
+    if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\%%V\x86\wisubstg.vbs" (
+        set SDK_VERSION=%%V
+        goto :SDK_VERSION_FOUND
+    )
+)
+
+:SDK_VERSION_FOUND
+if "%SDK_VERSION%" == "" (
+    echo ERROR: Windows SDK scripts not found (wisubstg.vbs). Install Windows 10/11 SDK.
+    exit /b 1
+)
 
 set ASPIA_VERSION=%1
 set ASPIA_ARCH=%2
