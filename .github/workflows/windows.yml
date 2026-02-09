@@ -77,20 +77,46 @@ jobs:
         shell: pwsh
         run: |
           $kitInclude = "${env:ProgramFiles(x86)}\\Windows Kits\\10\\Include"
-          $wudf = Get-ChildItem -Path $kitInclude -Recurse -Filter wudfwdm.h -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-          if ($wudf) {
-            Write-Host "WDK headers already present: $($wudf.FullName)"
+
+          function Test-WdkPresent {
+            param([string]$Root)
+            $wudf = Get-ChildItem -Path $Root -Recurse -Filter wudfwdm.h -ErrorAction SilentlyContinue | Select-Object -First 1
+            $wdf  = Get-ChildItem -Path (Join-Path $Root "wdf") -Recurse -Filter wdf.h -ErrorAction SilentlyContinue | Select-Object -First 1
+            return ($null -ne $wudf -and $null -ne $wdf)
+          }
+
+          if (Test-WdkPresent -Root $kitInclude) {
+            Write-Host "WDK headers already present."
             exit 0
           }
 
           Write-Host "WDK headers not found, installing WDK via winget..."
           winget --version
-          winget install --id Microsoft.WindowsWDK --source winget --accept-package-agreements --accept-source-agreements --silent
+          winget source update
 
-          $wudf = Get-ChildItem -Path $kitInclude -Recurse -Filter wudfwdm.h -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-          if (-not $wudf) { throw "WDK header wudfwdm.h not found after install." }
+          # WDK is distributed in winget with a versioned Id (no unversioned Microsoft.WindowsWDK).
+          $wdkIds = @(
+            "Microsoft.WindowsWDK.10.0.26100",
+            "Microsoft.WindowsWDK.10.0.22621",
+            "Microsoft.WindowsWDK.10.0.22000",
+            "Microsoft.WindowsWDK.10.0.19041"
+          )
+
+          $installed = $false
+          foreach ($id in $wdkIds) {
+            Write-Host "Trying: $id"
+            winget install --source winget --exact --id $id --accept-package-agreements --accept-source-agreements --silent
+            if ($LASTEXITCODE -eq 0) { $installed = $true; break }
+            Write-Host "Install failed for $id (exit code $LASTEXITCODE)."
+          }
+
+          if (-not $installed) {
+            throw "Unable to install WDK via winget. Tried: $($wdkIds -join ', ')"
+          }
+
+          if (-not (Test-WdkPresent -Root $kitInclude)) {
+            throw "WDK headers not found after install."
+          }
 
       - name: Cache vcpkg downloads/binaries
         uses: actions/cache@v4
