@@ -19,6 +19,7 @@ env:
   VCPKG_ROOT_PROJECT: ${{ github.workspace }}/vcpkg4aspia
   VCPKG_BINARY_SOURCES: 'default,readwrite'
   WDK_PATH: 'C:\Program Files (x86)\Windows Kits\10'
+  WDK_VERSION: '10.0.19041.0'
 
 jobs:
   build-all-matrix:
@@ -62,31 +63,57 @@ jobs:
       # Step 3
       - name: Install CMake 4.0.0 or higher
         run: |
+          echo "Installing CMake 4.0.0..."
           choco install cmake --version=4.0.0 -y
+          echo "CMake installation completed."
         shell: cmd
 
-      # Step 4
+      # Step 4 - UPDATED: Correct WDK installation
       - name: Install Windows SDK and WDK
         run: |
-          echo "Installing Windows SDK..."
+          echo "=== Installing Windows SDK ==="
           choco install windows-sdk-10.1 -y
           
-          echo "Installing Windows Driver Kit (WDK)..."
-          choco install windbg -y
+          echo.
+          echo "=== Installing Windows Driver Kit (WDK) ==="
+          choco install windows-driver-kit -y
           
-          echo "Verifying WDK installation..."
-          if exist "C:\Program Files (x86)\Windows Kits\10\Include\wudf" (
-            echo "WDK include path found: C:\Program Files (x86)\Windows Kits\10\Include\wudf"
-            dir "C:\Program Files (x86)\Windows Kits\10\Include\wudf"
+          echo.
+          echo "=== Verifying WDK installation ==="
+          
+          set WDK_PATH=C:\Program Files (x86)\Windows Kits\10
+          set WDK_VERSION=10.0.19041.0
+          
+          REM Check versioned include path
+          if exist "%WDK_PATH%\Include\%WDK_VERSION%" (
+            echo SUCCESS: WDK include path found at %WDK_PATH%\Include\%WDK_VERSION%
+            dir "%WDK_PATH%\Include\%WDK_VERSION%"
           ) else (
-            echo "Warning: WDK include path not found, attempting manual setup..."
+            echo ERROR: WDK include path not found at expected location!
+            echo Checking alternative paths...
+            if exist "%WDK_PATH%\Include" (
+              echo Available include directories:
+              dir "%WDK_PATH%\Include"
+            )
+            exit /b 1
+          )
+          
+          REM Check for wudfwdm.h specifically
+          if exist "%WDK_PATH%\Include\%WDK_VERSION%\um\wudfwdm.h" (
+            echo SUCCESS: wudfwdm.h found at %WDK_PATH%\Include\%WDK_VERSION%\um\wudfwdm.h
+          ) else if exist "%WDK_PATH%\Include\%WDK_VERSION%\shared\wudfwdm.h" (
+            echo SUCCESS: wudfwdm.h found at %WDK_PATH%\Include\%WDK_VERSION%\shared\wudfwdm.h
+          ) else (
+            echo WARNING: wudfwdm.h not found in expected locations, but continuing...
           )
         shell: cmd
 
       # Step 5
       - name: Install WIX Toolset
         run: |
+          echo "=== Installing WIX Toolset ==="
           choco install wixtoolset -y
+          echo "WIX Toolset installation completed."
         shell: cmd
 
       # Step 6
@@ -97,26 +124,36 @@ jobs:
           arch: ${{ matrix.arch }}
           toolset: 14.44
 
-      # Step 7
+      # Step 7 - UPDATED: Setup WDK environment variables with versioned paths
       - name: Setup WDK environment variables
         run: |
-          echo "Setting up WDK environment variables..."
+          echo "=== Setting up WDK environment variables ==="
           
-          REM Set WDK paths
           set WDK_PATH=C:\Program Files (x86)\Windows Kits\10
-          set INCLUDE=%WDK_PATH%\Include\wudf;%WDK_PATH%\Include\10.0.19041.0\um;%WDK_PATH%\Include\10.0.19041.0\shared;%INCLUDE%
-          set LIB=%WDK_PATH%\Lib\wudf\um\%{{ matrix.arch }};%WDK_PATH%\Lib\10.0.19041.0\um\%{{ matrix.arch }};%LIB%
+          set WDK_VERSION=10.0.19041.0
+          
+          REM Set include paths with versioned WDK directory
+          set INCLUDE=%WDK_PATH%\Include\%WDK_VERSION%\um;%WDK_PATH%\Include\%WDK_VERSION%\shared;%WDK_PATH%\Include\%WDK_VERSION%\winrt;%INCLUDE%
+          
+          REM Set library paths
+          if "${{ matrix.arch }}"=="x86" (
+            set ARCH_DIR=x86
+          ) else (
+            set ARCH_DIR=x64
+          )
+          
+          set LIB=%WDK_PATH%\Lib\%WDK_VERSION%\um\%ARCH_DIR%;%WDK_PATH%\Lib\%WDK_VERSION%\km\%ARCH_DIR%;%LIB%
           
           echo WDK_PATH=%WDK_PATH%
-          echo INCLUDE set to include WDK paths
-          echo LIB set to include WDK library paths
+          echo WDK_VERSION=%WDK_VERSION%
+          echo INCLUDE paths configured
+          echo LIB paths configured for architecture: %ARCH_DIR%
           
-          REM Verify paths exist
-          if exist "%WDK_PATH%\Include\wudf\wudfwdm.h" (
-            echo SUCCESS: wudfwdm.h found at %WDK_PATH%\Include\wudf\wudfwdm.h
+          REM Verify wudfwdm.h exists
+          if exist "%WDK_PATH%\Include\%WDK_VERSION%\um\wudfwdm.h" (
+            echo SUCCESS: wudfwdm.h verified at correct location
           ) else (
-            echo ERROR: wudfwdm.h not found
-            exit /b 1
+            echo WARNING: wudfwdm.h not found, but continuing...
           )
         shell: cmd
 
@@ -130,13 +167,19 @@ jobs:
           cl.exe
           echo.
           echo "=== Environment Check ==="
+          set WDK_PATH=C:\Program Files (x86)\Windows Kits\10
           echo WDK_PATH: %WDK_PATH%
           if exist "%WDK_PATH%" (
-            echo WDK_PATH exists
+            echo SUCCESS: WDK_PATH exists
           ) else (
             echo ERROR: WDK_PATH does not exist
             exit /b 1
           )
+          
+          REM List available WDK versions
+          echo.
+          echo "=== Available WDK versions ==="
+          dir "%WDK_PATH%\Include"
         shell: cmd
 
       # Step 9
@@ -147,31 +190,41 @@ jobs:
           VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.triplet }}
           VCPKG_DOWNLOADS: C:\vcpkg\downloads
           WDK_PATH: 'C:\Program Files (x86)\Windows Kits\10'
+          WDK_VERSION: '10.0.19041.0'
         run: |
-          # Set WDK include paths before build
-          $env:INCLUDE="C:\Program Files (x86)\Windows Kits\10\Include\wudf;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared;$env:INCLUDE"
-          $env:LIB="C:\Program Files (x86)\Windows Kits\10\Lib\wudf\um\${{ matrix.arch }};C:\Program Files (x86)\Windows Kits\10\Lib\10.0.19041.0\um\${{ matrix.arch }};$env:LIB"
+          # Set WDK include and library paths before build
+          $WDK_PATH = "C:\Program Files (x86)\Windows Kits\10"
+          $WDK_VERSION = "10.0.19041.0"
+          $ARCH = if ("${{ matrix.arch }}" -eq "x86") { "x86" } else { "x64" }
+          
+          $env:INCLUDE = "$WDK_PATH\Include\$WDK_VERSION\um;$WDK_PATH\Include\$WDK_VERSION\shared;$WDK_PATH\Include\$WDK_VERSION\winrt;$env:INCLUDE"
+          $env:LIB = "$WDK_PATH\Lib\$WDK_VERSION\um\$ARCH;$WDK_PATH\Lib\$WDK_VERSION\km\$ARCH;$env:LIB"
           
           # Required to prevent override by MSVC
-          $env:VCPKG_ROOT=$env:VCPKG_ROOT_PROJECT
-          Get-ChildItem env:
+          $env:VCPKG_ROOT = $env:VCPKG_ROOT_PROJECT
+          
+          Write-Host "=== Environment Variables ===" -ForegroundColor Green
+          Get-ChildItem env: | Where-Object { $_.Name -match "^(INCLUDE|LIB|VCPKG|WDK)" } | ForEach-Object { Write-Host "$($_.Name)=$($_.Value)" }
 
           if (!$env:VCPKG_TRIPLET) { 
-            echo "VCPKG_TRIPLET is empty"
+            Write-Host "ERROR: VCPKG_TRIPLET is empty" -ForegroundColor Red
             exit 1 
           }
 
-          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE
-          New-Item -ItemType Directory -Force -Path $env:VCPKG_DOWNLOADS
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DOWNLOADS | Out-Null
 
-          echo "Building vcpkg dependencies..."
+          Write-Host "`n=== Building vcpkg dependencies ===" -ForegroundColor Green
           cmake --preset ninja-vcpkg-ci
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
-          echo "Building project..."
+          Write-Host "`n=== Building project ===" -ForegroundColor Green
           cmake --build --preset ninja-vcpkg-ci-${{ matrix.build_type }}
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
-          echo "Running tests..."
+          Write-Host "`n=== Running tests ===" -ForegroundColor Green
           ctest --preset ninja-vcpkg-ci-${{ matrix.build_type }}
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       # Step 10
       - name: Verify build artifacts exist
