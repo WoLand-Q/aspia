@@ -15,7 +15,7 @@ popd
 
 :SDK_VERSION_FOUND
 if "%SDK_VERSION%" == "" (
-    echo ERROR: Windows SDK scripts not found (wisubstg.vbs). Install Windows 10/11 SDK.
+    echo ERROR: Windows SDK scripts not found. Missing wisubstg.vbs. Install Windows 10/11 SDK.
     exit /b 1
 )
 
