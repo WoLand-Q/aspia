@@ -38,27 +38,23 @@ jobs:
             triplet: x64-windows-static
 
     steps:
-      # Step 1
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: false
 
-      # Step 2
       - name: Checkout vcpkg4aspia
         uses: actions/checkout@v4
         with:
           repository: dchapyshev/vcpkg4aspia
           path: vcpkg4aspia
 
-      # Step 3
       - name: Set MSVC x86/x64 parameters
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
           toolset: 14.44
 
-      # Step 4
       - name: Install build tools (CMake 4+, Ninja, WiX)
         shell: pwsh
         run: |
@@ -81,20 +77,46 @@ jobs:
         shell: pwsh
         run: |
           $kitInclude = "${env:ProgramFiles(x86)}\\Windows Kits\\10\\Include"
-          $wudf = Get-ChildItem -Path $kitInclude -Recurse -Filter wudfwdm.h -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-          if ($wudf) {
-            Write-Host "WDK headers already present: $($wudf.FullName)"
+
+          function Test-WdkPresent {
+            param([string]$Root)
+            $wudf = Get-ChildItem -Path $Root -Recurse -Filter wudfwdm.h -ErrorAction SilentlyContinue | Select-Object -First 1
+            $wdf  = Get-ChildItem -Path (Join-Path $Root "wdf") -Recurse -Filter wdf.h -ErrorAction SilentlyContinue | Select-Object -First 1
+            return ($null -ne $wudf -and $null -ne $wdf)
+          }
+
+          if (Test-WdkPresent -Root $kitInclude) {
+            Write-Host "WDK headers already present."
             exit 0
           }
 
           Write-Host "WDK headers not found, installing WDK via winget..."
           winget --version
-          winget install --id Microsoft.WindowsWDK --source winget --accept-package-agreements --accept-source-agreements --silent
+          winget source update
 
-          $wudf = Get-ChildItem -Path $kitInclude -Recurse -Filter wudfwdm.h -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-          if (-not $wudf) { throw "WDK header wudfwdm.h not found after install." }
+          # WDK is distributed in winget with a versioned Id (no unversioned Microsoft.WindowsWDK).
+          $wdkIds = @(
+            "Microsoft.WindowsWDK.10.0.26100",
+            "Microsoft.WindowsWDK.10.0.22621",
+            "Microsoft.WindowsWDK.10.0.22000",
+            "Microsoft.WindowsWDK.10.0.19041"
+          )
+
+          $installed = $false
+          foreach ($id in $wdkIds) {
+            Write-Host "Trying: $id"
+            winget install --source winget --exact --id $id --accept-package-agreements --accept-source-agreements --silent
+            if ($LASTEXITCODE -eq 0) { $installed = $true; break }
+            Write-Host "Install failed for $id (exit code $LASTEXITCODE)."
+          }
+
+          if (-not $installed) {
+            throw "Unable to install WDK via winget. Tried: $($wdkIds -join ', ')"
+          }
+
+          if (-not (Test-WdkPresent -Root $kitInclude)) {
+            throw "WDK headers not found after install."
+          }
 
       - name: Cache vcpkg downloads/binaries
         uses: actions/cache@v4
@@ -108,13 +130,11 @@ jobs:
 
       - name: Dependencies, Build, Tests (Windows/PowerShell)
         env:
-          # This vars used inside CMake
           VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg\bincache-${{ matrix.triplet }}
           VCPKG_TRIPLET: ${{ matrix.triplet }}
           VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.triplet }}
           VCPKG_DOWNLOADS: C:\vcpkg\downloads
         run: |
-          # Required to prevent override by MSVC for e.g. on Win
           $env:VCPKG_ROOT=$env:VCPKG_ROOT_PROJECT
 
           if (!$env:VCPKG_TRIPLET) { echo "VCPKG_TRIPLET is empty"; exit 1; }
@@ -122,16 +142,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE
           New-Item -ItemType Directory -Force -Path $env:VCPKG_DOWNLOADS
 
-          # Build vcpkg dependencies
           cmake --preset ninja-vcpkg-ci
-
-          # Build project
           cmake --build --preset ninja-vcpkg-ci-${{ matrix.build_type }}
-
-          # Run tests
           ctest --preset ninja-vcpkg-ci-${{ matrix.build_type }}
 
-      # Step 5
       - name: Verify build artifacts exist
         shell: pwsh
         run: |
@@ -163,7 +177,6 @@ jobs:
         shell: cmd
         working-directory: ${{ github.workspace }}
 
-      # Step 6
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
