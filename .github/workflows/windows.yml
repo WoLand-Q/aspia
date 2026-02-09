@@ -4,293 +4,158 @@ on:
   push:
     branches:
       - master
+      - "smartcafe/**"
     paths-ignore:
       - 'README.md'
       - 'LICENSE.md'
       - 'CONTRIBUTING.md'
       - 'CODE_OF_CONDUCT.md'
+  pull_request:
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 env:
   VCPKG_INSTALLED_DIR: ${{ github.workspace }}/builds/ninja-vcpkg-ci/vcpkg_installed
   VCPKG_ROOT_PROJECT: ${{ github.workspace }}/vcpkg4aspia
   VCPKG_BINARY_SOURCES: 'default,readwrite'
-  WDK_PATH: 'C:\Program Files (x86)\Windows Kits\10'
-  WDK_VERSION: '10.0.19041.0'
 
 jobs:
   build-all-matrix:
-    name: ${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.build_type }}
-    runs-on: ${{ matrix.os }}
-    if: github.event_name == 'push'
+    name: ${{ matrix.arch }}-${{ matrix.build_type }}
+    runs-on: windows-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        os: [windows-latest]
         arch: [x86, x64]
-        build_type: [release, debug]
+        build_type: [release]
         include:
-          - os: windows-latest
-            arch: x86
+          - arch: x86
             triplet: x86-windows-static
-          - os: windows-latest
-            arch: x64
-            triplet: x64-windows-static
-          - os: win11
-            arch: x86
-            triplet: x86-windows-static
-          - os: win11
-            arch: x64
+          - arch: x64
             triplet: x64-windows-static
 
     steps:
-      # Step 1
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: false
 
-      # Step 2
-      - name: Checkout Submodule
+      - name: Checkout vcpkg4aspia
         uses: actions/checkout@v4
         with:
           repository: dchapyshev/vcpkg4aspia
           path: vcpkg4aspia
 
-      # Step 3
-      - name: Install CMake 4.0.0 or higher
-        run: |
-          echo "Installing CMake 4.0.0..."
-          choco install cmake --version=4.0.0 -y
-          echo "CMake installation completed."
-        shell: cmd
-
-      # Step 4 - UPDATED: Correct WDK installation
-      - name: Install Windows SDK and WDK
-        run: |
-          echo "=== Installing Windows SDK ==="
-          choco install windows-sdk-10.1 -y
-          
-          echo.
-          echo "=== Installing Windows Driver Kit (WDK) ==="
-          choco install windows-driver-kit -y
-          
-          echo.
-          echo "=== Verifying WDK installation ==="
-          
-          set WDK_PATH=C:\Program Files (x86)\Windows Kits\10
-          set WDK_VERSION=10.0.19041.0
-          
-          REM Check versioned include path
-          if exist "%WDK_PATH%\Include\%WDK_VERSION%" (
-            echo SUCCESS: WDK include path found at %WDK_PATH%\Include\%WDK_VERSION%
-            dir "%WDK_PATH%\Include\%WDK_VERSION%"
-          ) else (
-            echo ERROR: WDK include path not found at expected location!
-            echo Checking alternative paths...
-            if exist "%WDK_PATH%\Include" (
-              echo Available include directories:
-              dir "%WDK_PATH%\Include"
-            )
-            exit /b 1
-          )
-          
-          REM Check for wudfwdm.h specifically
-          if exist "%WDK_PATH%\Include\%WDK_VERSION%\um\wudfwdm.h" (
-            echo SUCCESS: wudfwdm.h found at %WDK_PATH%\Include\%WDK_VERSION%\um\wudfwdm.h
-          ) else if exist "%WDK_PATH%\Include\%WDK_VERSION%\shared\wudfwdm.h" (
-            echo SUCCESS: wudfwdm.h found at %WDK_PATH%\Include\%WDK_VERSION%\shared\wudfwdm.h
-          ) else (
-            echo WARNING: wudfwdm.h not found in expected locations, but continuing...
-          )
-        shell: cmd
-
-      # Step 5
-      - name: Install WIX Toolset
-        run: |
-          echo "=== Installing WIX Toolset ==="
-          choco install wixtoolset -y
-          echo "WIX Toolset installation completed."
-        shell: cmd
-
-      # Step 6
       - name: Set MSVC x86/x64 parameters
         uses: ilammy/msvc-dev-cmd@v1
-        if: matrix.arch != 'amd64_arm64'
         with:
           arch: ${{ matrix.arch }}
           toolset: 14.44
 
-      # Step 7 - UPDATED: Setup WDK environment variables with versioned paths
-      - name: Setup WDK environment variables
+      - name: Install build tools (CMake 4+, Ninja, WiX)
+        shell: pwsh
         run: |
-          echo "=== Setting up WDK environment variables ==="
-          
-          set WDK_PATH=C:\Program Files (x86)\Windows Kits\10
-          set WDK_VERSION=10.0.19041.0
-          
-          REM Set include paths with versioned WDK directory
-          set INCLUDE=%WDK_PATH%\Include\%WDK_VERSION%\um;%WDK_PATH%\Include\%WDK_VERSION%\shared;%WDK_PATH%\Include\%WDK_VERSION%\winrt;%INCLUDE%
-          
-          REM Set library paths
-          if "${{ matrix.arch }}"=="x86" (
-            set ARCH_DIR=x86
-          ) else (
-            set ARCH_DIR=x64
-          )
-          
-          set LIB=%WDK_PATH%\Lib\%WDK_VERSION%\um\%ARCH_DIR%;%WDK_PATH%\Lib\%WDK_VERSION%\km\%ARCH_DIR%;%LIB%
-          
-          echo WDK_PATH=%WDK_PATH%
-          echo WDK_VERSION=%WDK_VERSION%
-          echo INCLUDE paths configured
-          echo LIB paths configured for architecture: %ARCH_DIR%
-          
-          REM Verify wudfwdm.h exists
-          if exist "%WDK_PATH%\Include\%WDK_VERSION%\um\wudfwdm.h" (
-            echo SUCCESS: wudfwdm.h verified at correct location
-          ) else (
-            echo WARNING: wudfwdm.h not found, but continuing...
-          )
-        shell: cmd
+          choco install cmake ninja wixtoolset --no-progress -y
 
-      # Step 8
-      - name: Verify CMake and tools version
-        run: |
-          echo "=== CMake Version ==="
+          $cmakeBin = "${env:ProgramFiles}\\CMake\\bin"
+          if (Test-Path $cmakeBin) { Add-Content $env:GITHUB_PATH $cmakeBin }
+
+          $wixCandle = Get-ChildItem -Path "${env:ProgramFiles(x86)}" -Recurse -Filter candle.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $wixCandle) { throw "WiX candle.exe not found after install." }
+
+          $wixRoot = Split-Path (Split-Path $wixCandle.FullName -Parent) -Parent
+          Add-Content $env:GITHUB_ENV "WIX=$wixRoot"
+
           cmake --version
-          echo.
-          echo "=== MSVC Version ==="
-          cl.exe
-          echo.
-          echo "=== Environment Check ==="
-          set WDK_PATH=C:\Program Files (x86)\Windows Kits\10
-          echo WDK_PATH: %WDK_PATH%
-          if exist "%WDK_PATH%" (
-            echo SUCCESS: WDK_PATH exists
-          ) else (
-            echo ERROR: WDK_PATH does not exist
-            exit /b 1
-          )
-          
-          REM List available WDK versions
-          echo.
-          echo "=== Available WDK versions ==="
-          dir "%WDK_PATH%\Include"
-        shell: cmd
+          ninja --version
 
-      # Step 9
+      - name: Ensure WDK headers are available
+        shell: pwsh
+        run: |
+          $kitInclude = "${env:ProgramFiles(x86)}\\Windows Kits\\10\\Include"
+          $wudf = Get-ChildItem -Path $kitInclude -Recurse -Filter wudfwdm.h -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($wudf) {
+            Write-Host "WDK headers already present: $($wudf.FullName)"
+            exit 0
+          }
+
+          Write-Host "WDK headers not found, installing WDK via winget..."
+          winget --version
+          winget install --id Microsoft.WindowsWDK --source winget --accept-package-agreements --accept-source-agreements --silent
+
+          $wudf = Get-ChildItem -Path $kitInclude -Recurse -Filter wudfwdm.h -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $wudf) { throw "WDK header wudfwdm.h not found after install." }
+
+      - name: Cache vcpkg downloads/binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\bincache-${{ matrix.triplet }}
+            C:\vcpkg\downloads
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
+
       - name: Dependencies, Build, Tests (Windows/PowerShell)
         env:
           VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg\bincache-${{ matrix.triplet }}
           VCPKG_TRIPLET: ${{ matrix.triplet }}
           VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.triplet }}
           VCPKG_DOWNLOADS: C:\vcpkg\downloads
-          WDK_PATH: 'C:\Program Files (x86)\Windows Kits\10'
-          WDK_VERSION: '10.0.19041.0'
         run: |
-          # Set WDK include and library paths before build
-          $WDK_PATH = "C:\Program Files (x86)\Windows Kits\10"
-          $WDK_VERSION = "10.0.19041.0"
-          $ARCH = if ("${{ matrix.arch }}" -eq "x86") { "x86" } else { "x64" }
-          
-          $env:INCLUDE = "$WDK_PATH\Include\$WDK_VERSION\um;$WDK_PATH\Include\$WDK_VERSION\shared;$WDK_PATH\Include\$WDK_VERSION\winrt;$env:INCLUDE"
-          $env:LIB = "$WDK_PATH\Lib\$WDK_VERSION\um\$ARCH;$WDK_PATH\Lib\$WDK_VERSION\km\$ARCH;$env:LIB"
-          
-          # Required to prevent override by MSVC
-          $env:VCPKG_ROOT = $env:VCPKG_ROOT_PROJECT
-          
-          Write-Host "=== Environment Variables ===" -ForegroundColor Green
-          Get-ChildItem env: | Where-Object { $_.Name -match "^(INCLUDE|LIB|VCPKG|WDK)" } | ForEach-Object { Write-Host "$($_.Name)=$($_.Value)" }
+          $env:VCPKG_ROOT=$env:VCPKG_ROOT_PROJECT
 
-          if (!$env:VCPKG_TRIPLET) { 
-            Write-Host "ERROR: VCPKG_TRIPLET is empty" -ForegroundColor Red
-            exit 1 
+          if (!$env:VCPKG_TRIPLET) { echo "VCPKG_TRIPLET is empty"; exit 1; }
+
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DOWNLOADS
+
+          cmake --preset ninja-vcpkg-ci
+          cmake --build --preset ninja-vcpkg-ci-${{ matrix.build_type }}
+          ctest --preset ninja-vcpkg-ci-${{ matrix.build_type }}
+
+      - name: Verify build artifacts exist
+        shell: pwsh
+        run: |
+          $binDir = Join-Path $env:GITHUB_WORKSPACE "builds\\ninja-vcpkg-ci\\Release"
+          if (-not (Test-Path $binDir)) { throw "Build output directory not found: $binDir" }
+
+          $required = @(
+            "smartcafe_router.exe",
+            "smartcafe_relay.exe",
+            "smartcafe_sha256.exe",
+            "smartcafe_client.exe",
+            "smartcafe_console.exe",
+            "smartcafe_host.exe"
+          )
+
+          $missing = @()
+          foreach ($file in $required) {
+            if (-not (Test-Path (Join-Path $binDir $file))) { $missing += $file }
           }
 
-          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-          New-Item -ItemType Directory -Force -Path $env:VCPKG_DOWNLOADS | Out-Null
+          if ($missing.Count -gt 0) {
+            throw "Missing artifacts in ${binDir}: $($missing -join ', ')"
+          }
 
-          Write-Host "`n=== Building vcpkg dependencies ===" -ForegroundColor Green
-          cmake --preset ninja-vcpkg-ci
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-          Write-Host "`n=== Building project ===" -ForegroundColor Green
-          cmake --build --preset ninja-vcpkg-ci-${{ matrix.build_type }}
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-          Write-Host "`n=== Running tests ===" -ForegroundColor Green
-          ctest --preset ninja-vcpkg-ci-${{ matrix.build_type }}
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      # Step 10
-      - name: Verify build artifacts exist
-        run: |
-          echo "=== Build artifacts directory listing ==="
-          dir "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\"
-          
-          echo.
-          echo "=== Checking for required executables ==="
-          
-          set ERROR=0
-          
-          if not exist "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\smartcafe_router.exe" (
-            echo ERROR: smartcafe_router.exe not found
-            set ERROR=1
-          ) else (
-            echo OK: smartcafe_router.exe found
-          )
-          
-          if not exist "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\smartcafe_relay.exe" (
-            echo ERROR: smartcafe_relay.exe not found
-            set ERROR=1
-          ) else (
-            echo OK: smartcafe_relay.exe found
-          )
-          
-          if not exist "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\smartcafe_sha256.exe" (
-            echo ERROR: smartcafe_sha256.exe not found
-            set ERROR=1
-          ) else (
-            echo OK: smartcafe_sha256.exe found
-          )
-          
-          if %ERROR% equ 1 (
-            echo.
-            echo ERROR: Some required build artifacts are missing!
-            exit /b 1
-          ) else (
-            echo.
-            echo SUCCESS: All required build artifacts found!
-          )
-        shell: cmd
-
-      # Step 11
       - name: Build MSI packages
         run: |
-          echo "=== Building MSI packages ==="
-          installer\build.cmd 3.0.0 ${{ matrix.arch }} ${{ github.workspace }} ${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}
-          
-          if %ERRORLEVEL% neq 0 (
-            echo ERROR: MSI build failed with error code %ERRORLEVEL%
-            exit /b %ERRORLEVEL%
-          )
-          
-          echo.
-          echo "=== MSI packages built successfully ==="
-          dir "${{ github.workspace }}\builds\ninja-vcpkg-ci\${{ matrix.build_type }}\*.msi"
+          set BIN_DIR=%GITHUB_WORKSPACE%\builds\ninja-vcpkg-ci\Release
+          installer\build.cmd 3.0.0 ${{ matrix.arch }} %GITHUB_WORKSPACE% %BIN_DIR%
         shell: cmd
         working-directory: ${{ github.workspace }}
 
-      # Step 12
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.build_type }}
+          name: smartcafe-msi-${{ matrix.arch }}
           path: |
-            ${{ github.workspace }}/builds/ninja-vcpkg-ci/${{ matrix.build_type }}/*.msi
+            ${{ github.workspace }}/builds/ninja-vcpkg-ci/Release/*-${{ matrix.arch }}.msi
           if-no-files-found: error
           retention-days: 7
