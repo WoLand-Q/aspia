@@ -210,9 +210,11 @@ void SessionWindow::onStatusChanged(Client::Status status, const QVariant& data)
                     .arg(session_state_->hostAddress()).arg(session_state_->hostPort()));
             }
 
-            // If no custom name was provided in Config (Client UI doesn't set it),
+            // If no custom display/computer name was provided in Config,
             // update the title using the computer name received from the Host.
-            if (session_state_->isConnectionByHostId() && session_state_->computerName().isEmpty())
+            if (session_state_->isConnectionByHostId() &&
+                session_state_->displayName().isEmpty() &&
+                session_state_->computerName().isEmpty())
             {
                 const QString peer_computer_name = data.toString().trimmed();
                 if (!peer_computer_name.isEmpty())
@@ -277,7 +279,10 @@ void SessionWindow::onStatusChanged(Client::Status status, const QVariant& data)
 void SessionWindow::setClientTitle(const Config& config)
 {
     QString session_name = common::sessionName(config.session_type);
-    QString computer_name = config.computer_name;
+    QString computer_name = config.display_name;
+
+    if (computer_name.isEmpty())
+        computer_name = config.computer_name;
 
     if (computer_name.isEmpty())
     {
